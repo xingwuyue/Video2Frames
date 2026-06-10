@@ -17,10 +17,10 @@ import {
   ZoomOut
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
-import { projectFileUrl } from "../api/client";
+import { fileUrl } from "../api/client";
 import type { FrameRecord } from "../api/types";
 import { fitToViewport } from "../utils/canvasTools";
-import { connectedColorMask } from "../utils/floodFill";
+import { connectedColorMask, globalColorMask } from "../utils/floodFill";
 import { previewBackgroundModes, type PreviewBackground } from "../utils/previewBackground";
 import { keyedPreviewPath, shouldCancelSmartPreview, type RefineToolMode } from "../utils/refinePreview";
 import { firstVideoFile } from "../utils/videoFiles";
@@ -30,7 +30,6 @@ type Point = { x: number; y: number };
 
 type RefineEditorProps = {
   frame: FrameRecord | null;
-  projectName: string | null;
   previewBackground: PreviewBackground;
   onPreviewBackgroundChange: (background: PreviewBackground) => void;
   onImportVideo: (file: File) => void;
@@ -54,7 +53,6 @@ const maxZoom = 12;
 
 export function RefineEditor({
   frame,
-  projectName,
   previewBackground,
   onPreviewBackgroundChange,
   onImportVideo,
@@ -84,9 +82,9 @@ export function RefineEditor({
   const [status, setStatus] = useState("选择一帧开始本地精修。");
 
   const imagePath = keyedPreviewPath(frame);
-  const imageUrl = projectName && imagePath ? projectFileUrl(projectName, imagePath) : null;
+  const imageUrl = imagePath ? fileUrl(imagePath) : null;
   const frameNeedsKeying = Boolean(frame && !frame.keyed_path);
-  const cursor = spaceHeld ? "grab" : mode === "color" ? "crosshair" : "none";
+  const cursor = spaceHeld ? "grab" : mode === "color" || mode === "global_color" ? "crosshair" : "none";
 
   const cloneCurrentImage = useCallback(() => {
     const canvas = canvasRef.current;
@@ -297,7 +295,10 @@ export function RefineEditor({
     }
 
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    smartMaskRef.current = connectedColorMask(imageData.data, canvas.width, canvas.height, point.x, point.y, tolerance);
+    const mask = mode === "global_color"
+      ? globalColorMask(imageData.data, canvas.width, canvas.height, point.x, point.y, tolerance)
+      : connectedColorMask(imageData.data, canvas.width, canvas.height, point.x, point.y, tolerance);
+    smartMaskRef.current = mask;
     smartPreviewMetaRef.current = { mode, imageKey: imagePath, tolerance };
     redrawOverlay();
     setStatus("同色擦除预览已生成，请先应用或取消后再选择其他区域。");
@@ -351,7 +352,7 @@ export function RefineEditor({
       panStartRef.current = { x: event.clientX - pan.x, y: event.clientY - pan.y };
       return;
     }
-    if (mode === "color") {
+    if (mode === "color" || mode === "global_color") {
       const point = pointFromEvent(event);
       if (point) {
         createSmartPreview(point);
@@ -505,6 +506,10 @@ export function RefineEditor({
               <Pipette size={15} aria-hidden="true" />
               同色擦除
             </button>
+            <button type="button" className={mode === "global_color" ? "active" : ""} onClick={() => setMode("global_color")}>
+              <Pipette size={15} aria-hidden="true" />
+              全局同色擦除
+            </button>
           </div>
 
           <label className="field compact-field">
@@ -533,7 +538,9 @@ export function RefineEditor({
               取消
             </button>
           </div>
-          <p className="helper-text">同色擦除会选中与点击点相连、颜色接近的区域。当前只编辑本地预览，后端文件暂不改变。</p>
+          <p className="helper-text">
+            同色擦除会选中与点击点相连且颜色接近的区域；全局同色擦除会选中整张图颜色接近的区域。当前只编辑本地预览，暂不改变后端文件。
+          </p>
         </aside>
 
         <div
@@ -559,7 +566,7 @@ export function RefineEditor({
               className="refine-overlay"
               style={{ width: `${(canvasRef.current?.width ?? 352) * zoom}px` }}
             />
-            {hasImage && mode !== "color" ? (
+            {hasImage && mode !== "color" && mode !== "global_color" ? (
               <div
                 className="brush-cursor"
                 aria-hidden="true"
@@ -582,9 +589,7 @@ export function RefineEditor({
               <span>
                 {frameNeedsKeying
                   ? "当前帧还没有抠图结果，请重新加载项目或执行抠图。"
-                  : projectName
-                    ? "选择一帧进行本地编辑，或拖入视频重新导入。"
-                    : "先创建或加载项目，再导入视频。"}
+                  : "选择一帧进行本地编辑，或拖入视频重新导入。"}
               </span>
             </div>
           ) : null}

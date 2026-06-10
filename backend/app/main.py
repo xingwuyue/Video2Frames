@@ -4,24 +4,24 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import exports, processing, projects
+from app.api.routes import router
+from app.core.models import SessionState
 
 
-PROJECTS_ROOT = Path("projects")
+DEFAULT_UPLOAD_DIR = Path("uploads")
 
 
-def create_app(projects_root: Path | None = None) -> FastAPI:
+def create_app(upload_dir: Path | None = None) -> FastAPI:
     app = FastAPI()
-    app.state.projects_root = projects_root or PROJECTS_ROOT
+    app.state.session = SessionState()
+    app.state.upload_dir = str((upload_dir or DEFAULT_UPLOAD_DIR).resolve())
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^http://(127\.0\.0\.1|localhost):\d+$",
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["content-type", "x-filename", "x-sample-every-n-frames"],
     )
-    app.include_router(projects.router)
-    app.include_router(processing.router)
-    app.include_router(exports.router)
+    app.include_router(router)
     _install_error_handlers(app)
     return app
 

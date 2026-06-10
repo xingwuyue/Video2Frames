@@ -45,10 +45,10 @@ export interface FrameRecord {
   enabled: boolean;
 }
 
-export interface ProjectConfig {
-  name: string;
-  root: string;
-  source_video: string | null;
+export interface SessionState {
+  video_path: string | null;
+  video_name: string | null;
+  output_dir: string | null;
   source_fps: number | null;
   source_width: number | null;
   source_height: number | null;

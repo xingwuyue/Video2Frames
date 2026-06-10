@@ -1,15 +1,15 @@
 from pathlib import Path
 
 
-PROJECT_FILE = "project.json"
-PROJECT_DIRS = (
-    Path("source"),
-    Path("frames") / "raw",
-    Path("frames") / "keyed",
-    Path("edits"),
-    Path("exports"),
-)
+OUTPUT_SUBDIRS = ("raw", "keyed", "exports")
 
 
-def project_file(project_root: Path) -> Path:
-    return project_root / PROJECT_FILE
+def ensure_output_dirs(output_dir: Path) -> None:
+    """Create the standard sub-directories inside *output_dir*."""
+    for name in OUTPUT_SUBDIRS:
+        (output_dir / name).mkdir(parents=True, exist_ok=True)
+
+
+def output_dir_for_video(video_path: Path) -> Path:
+    """Return ``<video_parent>/<video_stem>/`` as the output root."""
+    return video_path.parent / video_path.stem

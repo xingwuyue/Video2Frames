@@ -48,10 +48,16 @@ class FrameRecord(BaseModel):
     enabled: bool = True
 
 
-class ProjectConfig(BaseModel):
-    name: str
-    root: Path
-    source_video: str | None = None
+class SessionState(BaseModel):
+    """Runtime state for the current video import session.
+
+    Unlike the old ProjectConfig this is NOT persisted to disk as a
+    "project file".  The backend keeps a single instance in memory and
+    the frontend drives it through the API.
+    """
+    video_path: str | None = None
+    video_name: str | None = None
+    output_dir: Path | None = None
     source_fps: float | None = None
     source_width: int | None = None
     source_height: int | None = None

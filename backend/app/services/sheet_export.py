@@ -5,22 +5,40 @@ from statistics import median
 
 from PIL import Image
 
-from app.core.models import FrameRecord, ProjectConfig
+from app.core.models import AnchorConfig, ExportConfig, FrameRecord
 
 
-def export_sheet(project: ProjectConfig, output_dir: Path) -> dict[str, Path]:
-    enabled_frames = [frame for frame in project.frames if frame.enabled]
-    export = project.export
+def export_sheet(
+    frames: list[FrameRecord],
+    export: ExportConfig,
+    anchor: AnchorConfig,
+    sample_every_n_frames: int,
+    output_dir: Path,
+) -> dict[str, Path]:
+    """Build a sprite-sheet and write it alongside its JSON metadata.
+
+    Parameters
+    ----------
+    frames : list[FrameRecord]
+        Only *enabled* frames will be included.
+    export : ExportConfig
+    anchor : AnchorConfig
+    sample_every_n_frames : int
+    output_dir : Path
+        The root output directory; files are written to ``output_dir/exports/``.
+    """
+    enabled_frames = [frame for frame in frames if frame.enabled]
     columns, rows = _layout(len(enabled_frames), export)
     capacity = rows * columns
     if len(enabled_frames) > capacity:
         raise ValueError("帧数超过当前表格容量。")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sheet_path = output_dir / "sheet.png"
-    metadata_path = output_dir / "frames.json"
+    exports_dir = output_dir / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    sheet_path = exports_dir / "sheet.png"
+    metadata_path = exports_dir / "frames.json"
 
-    source_frames = _load_frames(project, enabled_frames)
+    source_frames = _load_frames(enabled_frames)
     source_bboxes = [_alpha_bbox(image, export.alpha_threshold) for image in source_frames]
     heights = [bbox["height"] for bbox in source_bboxes if bbox is not None and bbox["height"] > 0]
     reference_height = median(heights) if heights else export.target_body_height
@@ -50,9 +68,9 @@ def export_sheet(project: ProjectConfig, output_dir: Path) -> dict[str, Path]:
                 "w": export.cell_width,
                 "h": export.cell_height,
                 "anchor": {
-                    "preset": project.anchor.preset,
-                    "x": project.anchor.x,
-                    "y": project.anchor.y,
+                    "preset": anchor.preset,
+                    "x": anchor.x,
+                    "y": anchor.y,
                 },
                 "normalization": normalization,
             }
@@ -71,7 +89,7 @@ def export_sheet(project: ProjectConfig, output_dir: Path) -> dict[str, Path]:
                 "frame_count": len(enabled_frames),
                 "fps": export.fps,
                 "sampling": {
-                    "take_every_n_frames": project.sample_every_n_frames,
+                    "take_every_n_frames": sample_every_n_frames,
                     "start_frame": 0,
                 },
                 "scale_policy": {
@@ -122,10 +140,11 @@ def _layout(frame_count: int, export) -> tuple[int, int]:
     return export.columns, export.rows
 
 
-def _load_frames(project: ProjectConfig, frames: list[FrameRecord]) -> list[Image.Image]:
+def _load_frames(frames: list[FrameRecord]) -> list[Image.Image]:
     images = []
     for frame in frames:
-        with Image.open(_frame_path(project, frame)) as source:
+        path = Path(frame.keyed_path or frame.raw_path)
+        with Image.open(path) as source:
             images.append(source.convert("RGBA"))
     return images
 
@@ -263,10 +282,3 @@ def _overflow_flags(left: int, top: int, right: int, bottom: int, export) -> dic
 
 def _json_number(value: float) -> int | float:
     return int(value) if float(value).is_integer() else value
-
-
-def _frame_path(project: ProjectConfig, frame: FrameRecord) -> Path:
-    path = Path(frame.keyed_path or frame.raw_path)
-    if path.is_absolute():
-        return path
-    return project.root / path

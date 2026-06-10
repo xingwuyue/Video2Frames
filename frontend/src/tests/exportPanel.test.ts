@@ -27,13 +27,13 @@ describe("validateExportCapacity", () => {
     }));
 
     const result = await runGuardedExport({
-      projectName: "walk",
+      hasSession: true,
       auto_layout: true,
       rows: 1,
       columns: 6,
       enabledFrameCount: 7,
       config: defaultRequestConfig,
-      exportProject
+      exportProjectAction: exportProject
     });
 
     expect(result).toEqual({
@@ -43,7 +43,7 @@ describe("validateExportCapacity", () => {
         metadata: "projects/walk/exports/frames.json"
       }
     });
-    expect(exportProject).toHaveBeenCalledWith("walk", defaultRequestConfig);
+    expect(exportProject).toHaveBeenCalledWith(defaultRequestConfig);
   });
 
   it("does not call export when manual layout enabled frames exceed capacity", async () => {
@@ -53,13 +53,13 @@ describe("validateExportCapacity", () => {
     }));
 
     const result = await runGuardedExport({
-      projectName: "walk",
+      hasSession: true,
       auto_layout: false,
       rows: 2,
       columns: 2,
       enabledFrameCount: 5,
       config: createExportRequestConfig({ ...defaultConfig, auto_layout: false, rows: 2, columns: 2 }),
-      exportProject
+      exportProjectAction: exportProject
     });
 
     expect(result).toEqual({

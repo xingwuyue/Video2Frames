@@ -1,12 +1,12 @@
 import { FileCode2, FolderOutput, Loader2, PackageCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { exportProject } from "../api/client";
-import type { ExportConfig, ExportResult, ProjectConfig } from "../api/types";
+import type { ExportConfig, ExportResult, SessionState } from "../api/types";
 
 const capacityError = "帧数超过当前行列容量，请增加行列或删除帧。";
 
 type ExportPanelProps = {
-  project: ProjectConfig | null;
+  session: SessionState | null;
   enabledFrameCount: number;
 };
 
@@ -23,9 +23,9 @@ type ResultPath = {
 };
 
 type GuardedExportInput = CapacityInput & {
-  projectName: string | null;
+  hasSession: boolean;
   config: Partial<ExportConfig>;
-  exportProject: (projectName: string, config: Partial<ExportConfig>) => Promise<ExportResult>;
+  exportProjectAction: (config?: Partial<ExportConfig>) => Promise<ExportResult>;
 };
 
 type GuardedExportResult =
@@ -46,16 +46,16 @@ export function validateExportCapacity({ auto_layout, rows, columns, enabledFram
 }
 
 export async function runGuardedExport({
-  projectName,
+  hasSession,
   auto_layout,
   rows,
   columns,
   enabledFrameCount,
   config,
-  exportProject: exportProjectAction
+  exportProjectAction
 }: GuardedExportInput): Promise<GuardedExportResult> {
-  if (!projectName) {
-    return { ok: false, error: "请先加载或创建项目。" };
+  if (!hasSession) {
+    return { ok: false, error: "请先导入视频。" };
   }
 
   const validationError = validateExportCapacity({ auto_layout, rows, columns, enabledFrameCount });
@@ -63,7 +63,7 @@ export async function runGuardedExport({
     return { ok: false, error: validationError };
   }
 
-  return { ok: true, result: await exportProjectAction(projectName, config) };
+  return { ok: true, result: await exportProjectAction(config) };
 }
 
 export function collectExportResultPaths(result: ExportResult | null): ResultPath[] {
@@ -77,17 +77,17 @@ export function collectExportResultPaths(result: ExportResult | null): ResultPat
   ];
 }
 
-export function ExportPanel({ project, enabledFrameCount }: ExportPanelProps) {
-  const [settings, setSettings] = useState<ExportConfig>(() => exportDefaults(project));
+export function ExportPanel({ session, enabledFrameCount }: ExportPanelProps) {
+  const [settings, setSettings] = useState<ExportConfig>(() => exportDefaults(session));
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setSettings(exportDefaults(project));
+    setSettings(exportDefaults(session));
     setResult(null);
     setError(null);
-  }, [project]);
+  }, [session]);
 
   const capacity = settings.rows * settings.columns;
   const layoutSummary = settings.auto_layout
@@ -129,13 +129,13 @@ export function ExportPanel({ project, enabledFrameCount }: ExportPanelProps) {
     setLoading(true);
     try {
       const exported = await runGuardedExport({
-        projectName: project?.name ?? null,
+        hasSession: Boolean(session?.video_name),
         auto_layout: settings.auto_layout,
         rows: settings.rows,
         columns: settings.columns,
         enabledFrameCount,
         config: createExportRequestConfig(settings),
-        exportProject
+        exportProjectAction: exportProject
       });
 
       if (exported.ok) {
@@ -191,7 +191,7 @@ export function ExportPanel({ project, enabledFrameCount }: ExportPanelProps) {
       <button
         type="button"
         className="primary-button full-width export-button"
-        disabled={!project || loading || Boolean(validationError)}
+        disabled={!session?.video_name || loading || Boolean(validationError)}
         onClick={handleExport}
       >
         {loading ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <PackageCheck size={16} aria-hidden="true" />}
@@ -290,9 +290,9 @@ export function createExportRequestConfig(settings: ExportConfig): Partial<Expor
   };
 }
 
-function exportDefaults(project: ProjectConfig | null): ExportConfig {
+function exportDefaults(session: SessionState | null): ExportConfig {
   return {
     ...createDefaultExportConfig(),
-    ...(project?.export ?? {})
+    ...(session?.export ?? {})
   };
 }

@@ -1,4 +1,4 @@
-export type RefineToolMode = "erase" | "restore" | "color";
+export type RefineToolMode = "erase" | "restore" | "color" | "global_color";
 
 type SmartPreviewLifecycle = {
   hasPreview: boolean;
@@ -23,7 +23,7 @@ export function shouldCancelSmartPreview({
     return false;
   }
 
-  return previousMode !== nextMode || nextMode !== "color" || previousImageKey !== nextImageKey || previousTolerance !== nextTolerance;
+  return previousMode !== nextMode || (nextMode !== "color" && nextMode !== "global_color") || previousImageKey !== nextImageKey || previousTolerance !== nextTolerance;
 }
 
 export function keyedPreviewPath(frame: { keyed_path: string | null } | null): string | null {

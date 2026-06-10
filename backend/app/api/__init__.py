@@ -1,1 +1,1 @@
-"""HTTP API routers for the sprite sheet backend."""
+from app.api import routes

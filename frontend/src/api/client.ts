@@ -1,4 +1,4 @@
-import type { ExportConfig, ExportResult, ProjectConfig } from "./types";
+import type { ExportConfig, ExportResult, SessionState } from "./types";
 
 type ApiErrorResponse = {
   error?: unknown;
@@ -14,26 +14,12 @@ export function configureApiBase(base: string) {
   apiBase = normalizeApiBase(base);
 }
 
-export function createProject(name: string): Promise<ProjectConfig> {
-  return request<ProjectConfig>("/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name })
-  });
+export function getState(): Promise<SessionState> {
+  return request<SessionState>("/state");
 }
 
-export function loadProject(name: string): Promise<ProjectConfig> {
-  return request<ProjectConfig>(`/projects/${encodeURIComponent(name)}`);
-}
-
-export function processKey(name: string): Promise<ProjectConfig> {
-  return request<ProjectConfig>(`/projects/${encodeURIComponent(name)}/process/key`, {
-    method: "POST"
-  });
-}
-
-export function importVideo(name: string, file: File, sampleEveryNFrames: number): Promise<ProjectConfig> {
-  return request<ProjectConfig>(`/projects/${encodeURIComponent(name)}/import/video`, {
+export function importVideo(file: File, sampleEveryNFrames: number): Promise<SessionState> {
+  return request<SessionState>("/import", {
     method: "POST",
     headers: {
       "Content-Type": file.type || "application/octet-stream",
@@ -44,17 +30,23 @@ export function importVideo(name: string, file: File, sampleEveryNFrames: number
   });
 }
 
-export function projectFileUrl(projectName: string, projectPath: string): string {
-  const encodedPath = projectPath
+export function processKey(): Promise<SessionState> {
+  return request<SessionState>("/process/key", {
+    method: "POST"
+  });
+}
+
+export function fileUrl(filePath: string): string {
+  const encodedPath = filePath
     .split(/[\\/]+/)
     .filter(Boolean)
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-  return `${apiBase}/projects/${encodeURIComponent(projectName)}/files/${encodedPath}`;
+  return `${apiBase}/files/${encodedPath}`;
 }
 
-export function exportProject(name: string, config?: Partial<ExportConfig>): Promise<ExportResult> {
-  return request<ExportResult>(`/projects/${encodeURIComponent(name)}/export`, {
+export function exportProject(config?: Partial<ExportConfig>): Promise<ExportResult> {
+  return request<ExportResult>("/export", {
     method: "POST",
     headers: config ? { "Content-Type": "application/json" } : undefined,
     body: config ? JSON.stringify(config) : undefined

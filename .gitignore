@@ -8,3 +8,4 @@ coverage/
 .worktrees/
 projects/
 *.log
+uploads/

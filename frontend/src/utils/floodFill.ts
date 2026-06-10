@@ -61,3 +61,43 @@ export function connectedColorMask(
 
   return mask;
 }
+
+export function globalColorMask(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  tolerance: number
+): Uint8Array {
+  if (width <= 0 || height <= 0 || data.length !== width * height * 4) {
+    throw new Error("RGBA data dimensions are invalid");
+  }
+  if (tolerance < 0) {
+    throw new Error("tolerance must be zero or greater");
+  }
+
+  const mask = new Uint8Array(width * height);
+  if (x < 0 || y < 0 || x >= width || y >= height) {
+    return mask;
+  }
+
+  const startIndex = (y * width + x) * 4;
+  const targetR = data[startIndex];
+  const targetG = data[startIndex + 1];
+  const targetB = data[startIndex + 2];
+  const toleranceSquared = tolerance * tolerance;
+
+  for (let i = 0; i < width * height; i++) {
+    const dataIndex = i * 4;
+    const redDelta = data[dataIndex] - targetR;
+    const greenDelta = data[dataIndex + 1] - targetG;
+    const blueDelta = data[dataIndex + 2] - targetB;
+    const distanceSquared = redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta;
+    if (distanceSquared <= toleranceSquared) {
+      mask[i] = 1;
+    }
+  }
+
+  return mask;
+}

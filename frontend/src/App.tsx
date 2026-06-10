@@ -3,28 +3,18 @@ import {
   Info
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createProject, importVideo, loadProject, processKey } from "./api/client";
-import type { BackgroundKey, ProjectConfig } from "./api/types";
+import { importVideo, getState } from "./api/client";
+import type { SessionState } from "./api/types";
 import { ExportPanel } from "./components/ExportPanel";
 import { FrameTimeline } from "./components/FrameTimeline";
-import { ProjectPanel } from "./components/ProjectPanel";
+import { ImportPanel } from "./components/ImportPanel";
 import { RefineEditor } from "./components/RefineEditor";
 import { advancePlaybackFrame, playbackFrameIds, previousPlaybackFrame } from "./utils/playback";
 import type { PreviewBackground } from "./utils/previewBackground";
 
-const defaultBackground: BackgroundKey = {
-  mode: "green",
-  color: [0, 255, 0],
-  tolerance: 45,
-  edge_feather: 1,
-  spill_suppression: 0.25
-};
-
 export function App() {
-  const [project, setProject] = useState<ProjectConfig | null>(null);
-  const [projectName, setProjectName] = useState("");
+  const [session, setSession] = useState<SessionState | null>(null);
   const [sampleInterval, setSampleInterval] = useState(3);
-  const [background, setBackground] = useState<BackgroundKey>(defaultBackground);
   const [previewBackground, setPreviewBackground] = useState<PreviewBackground>("checkerboard");
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [enabledFrameIds, setEnabledFrameIds] = useState<Set<string>>(() => new Set());
@@ -36,21 +26,34 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    // Try loading existing session state on mount
+    getState()
+      .then((state) => {
+        if (state.video_path) {
+          applySessionState(state);
+        }
+      })
+      .catch((_) => {
+        // Ignored, backend might have just restarted or no session exists.
+      });
+  }, []);
+
   const selectedFrame = useMemo(
-    () => project?.frames.find((frame) => frame.id === selectedFrameId) ?? null,
-    [project, selectedFrameId]
+    () => session?.frames.find((frame) => frame.id === selectedFrameId) ?? null,
+    [session, selectedFrameId]
   );
   const exportEnabledFrameCount = useMemo(
     () =>
-      project?.frames.filter(
+      session?.frames.filter(
         (frame) =>
           enabledFrameIds.has(frame.id) && !hiddenFrameIds.has(frame.id) && !deletedFrameIds.has(frame.id)
       ).length ?? 0,
-    [deletedFrameIds, enabledFrameIds, hiddenFrameIds, project]
+    [deletedFrameIds, enabledFrameIds, hiddenFrameIds, session]
   );
   const playableFrameIds = useMemo(
-    () => playbackFrameIds(project?.frames ?? [], enabledFrameIds, hiddenFrameIds, deletedFrameIds),
-    [deletedFrameIds, enabledFrameIds, hiddenFrameIds, project]
+    () => playbackFrameIds(session?.frames ?? [], enabledFrameIds, hiddenFrameIds, deletedFrameIds),
+    [deletedFrameIds, enabledFrameIds, hiddenFrameIds, session]
   );
   const currentPlaybackIndex = selectedFrameId ? playableFrameIds.indexOf(selectedFrameId) : -1;
 
@@ -77,64 +80,36 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [isPlaying, loopPlayback, playbackFps, playableFrameIds]);
 
-  async function runProjectAction(action: () => Promise<ProjectConfig>) {
+  function applySessionState(nextSession: SessionState) {
+    setSession(nextSession);
+    setSampleInterval(nextSession.sample_every_n_frames);
+    setIsPlaying(false);
+    setEnabledFrameIds(new Set(nextSession.frames.filter((frame) => frame.enabled).map((frame) => frame.id)));
+    setHiddenFrameIds(new Set());
+    setDeletedFrameIds(new Set());
+    setSelectedFrameId((current) => {
+      if (current && nextSession.frames.some((frame) => frame.id === current)) {
+        return current;
+      }
+      return nextSession.frames[0]?.id ?? null;
+    });
+  }
+
+  async function runSessionAction(action: () => Promise<SessionState>) {
     setLoading(true);
     setError(null);
     try {
-      const nextProject = await action();
-      setProject(nextProject);
-      setProjectName(nextProject.name);
-      setSampleInterval(nextProject.sample_every_n_frames);
-      setBackground(nextProject.background);
-      setIsPlaying(false);
-      setEnabledFrameIds(new Set(nextProject.frames.filter((frame) => frame.enabled).map((frame) => frame.id)));
-      setHiddenFrameIds(new Set());
-      setDeletedFrameIds(new Set());
-      setSelectedFrameId((current) => {
-        if (current && nextProject.frames.some((frame) => frame.id === current)) {
-          return current;
-        }
-        return nextProject.frames[0]?.id ?? null;
-      });
+      const nextSession = await action();
+      applySessionState(nextSession);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "项目操作失败。");
+      setError(caught instanceof Error ? caught.message : "操作失败。");
     } finally {
       setLoading(false);
     }
   }
 
-  function handleCreateProject() {
-    const name = projectName.trim();
-    if (!name) {
-      setError("请先输入项目名称。");
-      return;
-    }
-    void runProjectAction(() => createProject(name));
-  }
-
-  function handleLoadProject() {
-    const name = projectName.trim();
-    if (!name) {
-      setError("请先输入项目名称。");
-      return;
-    }
-    void runProjectAction(() => loadProject(name));
-  }
-
-  function handleProcessKey() {
-    if (!project) {
-      setError("请先加载或创建项目。");
-      return;
-    }
-    void runProjectAction(() => processKey(project.name));
-  }
-
   function handleImportVideo(file: File) {
-    if (!project) {
-      setError("请先创建或加载项目。");
-      return;
-    }
-    void runProjectAction(() => importVideo(project.name, file, sampleInterval));
+    void runSessionAction(() => importVideo(file, sampleInterval));
   }
 
   function handleTogglePlayback() {
@@ -192,7 +167,7 @@ export function App() {
     if (selectedFrameId !== frameId) {
       return;
     }
-    const nextFrame = project?.frames.find(
+    const nextFrame = session?.frames.find(
       (frame) => frame.id !== frameId && !nextHidden.has(frame.id) && !nextDeleted.has(frame.id)
     );
     setSelectedFrameId(nextFrame?.id ?? null);
@@ -208,26 +183,18 @@ export function App() {
       </header>
 
       <section className="workspace" aria-label="SpriteSheet 工作台">
-        <ProjectPanel
-          project={project}
-          projectName={projectName}
+        <ImportPanel
+          session={session}
           sampleInterval={sampleInterval}
-          background={background}
           loading={loading}
           error={error}
-          onProjectNameChange={setProjectName}
           onSampleIntervalChange={setSampleInterval}
-          onBackgroundChange={setBackground}
-          onCreateProject={handleCreateProject}
-          onLoadProject={handleLoadProject}
           onImportVideo={handleImportVideo}
-          onProcessKey={handleProcessKey}
         />
 
         <section className="editor-column" aria-label="预览和时间轴">
           <RefineEditor
             frame={selectedFrame}
-            projectName={project?.name ?? null}
             previewBackground={previewBackground}
             onPreviewBackgroundChange={setPreviewBackground}
             onImportVideo={handleImportVideo}
@@ -247,7 +214,7 @@ export function App() {
           />
 
           <FrameTimeline
-            frames={project?.frames ?? []}
+            frames={session?.frames ?? []}
             selectedFrameId={selectedFrameId}
             enabledFrameIds={enabledFrameIds}
             hiddenFrameIds={hiddenFrameIds}
@@ -259,16 +226,16 @@ export function App() {
           />
         </section>
 
-        <aside className="panel status-panel" aria-label="项目状态和导出面板">
+        <aside className="panel status-panel" aria-label="状态和导出面板">
           <PanelTitle icon={<Info size={17} aria-hidden="true" />} title="状态" />
           <div className="settings-stack">
             <div className="setting-row">
-              <span>项目</span>
-              <strong>{project?.name ?? "未加载"}</strong>
+              <span>视频</span>
+              <strong>{session?.video_name ?? "未导入"}</strong>
             </div>
             <div className="setting-row">
               <span>帧数</span>
-              <strong>{project?.frames.length ?? 0}</strong>
+              <strong>{session?.frames.length ?? 0}</strong>
             </div>
             <div className="setting-row">
               <span>本地启用</span>
@@ -281,7 +248,7 @@ export function App() {
           </div>
           <p className="helper-text">时间轴调整目前只影响本地预览，不会写回后端。</p>
           <div className="panel-divider" />
-          <ExportPanel project={project} enabledFrameCount={exportEnabledFrameCount} />
+          <ExportPanel session={session} enabledFrameCount={exportEnabledFrameCount} />
         </aside>
       </section>
     </main>
